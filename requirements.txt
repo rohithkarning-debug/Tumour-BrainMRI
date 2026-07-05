@@ -1,0 +1,8 @@
+monai>=1.6.0
+numpy>=2.0.0
+nibabel>=5.0.0
+matplotlib>=3.8.0
+pillow>=10.0.0
+scipy>=1.13.0
+torch>=2.2.0
+tensorboard>=2.18.0

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+
+# Data and generated outputs
+input/
+output/
+results/
+models/
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*.swp
+*.swo
