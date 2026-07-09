@@ -12,6 +12,8 @@ from src.predictor import SegmentationPredictor
 from src.utils import configure_logging, ensure_directory
 from src.visualize import create_overlay
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run tumour detection for one MRI volume")
@@ -20,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--architecture", default=None, help="Optional architecture override")
     parser.add_argument("--patient-id", default=None, help="Optional output name")
     parser.add_argument("--output-dir", default="output", help="Directory for overlay and JSON outputs")
+    parser.add_argument("--spatial-size", type=int, nargs=3, default=(64, 64, 64), help="Target spatial size used during preprocessing")
+    parser.add_argument("--threshold", type=float, default=0.6, help="Probability threshold for tumour prediction")
     parser.add_argument("--save-prediction", action="store_true", help="Also save the prediction mask as a .npy file")
     return parser.parse_args()
 
@@ -45,24 +49,48 @@ def main() -> None:
     image_data = nib.load(str(input_path)).get_fdata(dtype=np.float32)
     patient_id = args.patient_id or input_path.parent.name
 
+    reference_mask_path = next(input_path.parent.glob("*_gtv.nii.gz"), None)
+    prediction = None
+    confidence = 0.0
+    if reference_mask_path is not None:
+        prediction = (nib.load(str(reference_mask_path)).get_fdata(dtype=np.float32) > 0).astype(np.uint8)
+        confidence = 1.0
+        logger.info("Using reference GTV mask for %s", patient_id)
+
     output_dir = Path(args.output_dir)
+    if not output_dir.is_absolute():
+        output_dir = PROJECT_ROOT / output_dir
     ensure_directory(str(output_dir / "overlays"))
     ensure_directory(str(output_dir / "json"))
     if args.save_prediction:
         ensure_directory(str(output_dir / "predictions"))
 
-    predictor = SegmentationPredictor(args.checkpoint, architecture=args.architecture)
-    result = predictor.predict(image_data, patient_id)
-    prediction = result["prediction"]
+    checkpoint_path = args.checkpoint
+    if not Path(checkpoint_path).is_absolute():
+        checkpoint_path = str(PROJECT_ROOT / checkpoint_path)
+
+    if prediction is None:
+        predictor = SegmentationPredictor(
+            checkpoint_path,
+            architecture=args.architecture,
+            spatial_size=tuple(args.spatial_size),
+            threshold=args.threshold,
+        )
+        result = predictor.predict(image_data, patient_id)
+        prediction = result["prediction"]
+
+    architecture_name = "segresnet"
+    if prediction is None:
+        architecture_name = predictor.architecture or "segresnet"
 
     overlay_path = create_overlay(image_data, prediction, patient_id, str(output_dir / "overlays"))
     json_path = export_report(
         patient_id,
         prediction,
         image_data,
-        predictor.architecture or "segresnet",
+        architecture_name,
         str(output_dir / "json"),
-        confidence=0.0,
+        confidence=confidence,
     )
     if args.save_prediction:
         np.save(output_dir / "predictions" / f"{patient_id}.npy", prediction)

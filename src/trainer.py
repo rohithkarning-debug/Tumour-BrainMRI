@@ -40,12 +40,18 @@ class SegmentationTrainer:
             out_channels=self.config.get("out_channels", 2),
         ).to(self.device)
         self.optimizer = AdamW(self.model.parameters(), lr=self.config.get("learning_rate", 1e-4), weight_decay=1e-5)
-        self.loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
+        class_weights = self.config.get("class_weights", [0.25, 0.75])
+        self.loss_fn = DiceCELoss(
+            to_onehot_y=True,
+            softmax=True,
+            lambda_dice=0.7,
+            lambda_ce=0.3,
+        )
         self.scaler = GradScaler(enabled=self.device.type == "cuda")
         self.writer = SummaryWriter(log_dir=self.config.get("log_dir", "output/runs"))
         self.best_dice = 0.0
         self.epochs_without_improvement = 0
-        self.checkpoint_path = Path(self.config.get("checkpoint_path", "models/best_model.pth"))
+        self.checkpoint_path = Path(self.config.get("checkpoint_path", "models/best_model.pth")).expanduser().resolve()
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         self.history: Dict[str, list[float]] = {
             "train_loss": [],
@@ -219,21 +225,28 @@ class SegmentationTrainer:
         return val_stats
 
     def _save_checkpoint(self, epoch: int, val_dice: float) -> None:
-        if val_dice > self.best_dice:
+        improved = val_dice > self.best_dice
+        if improved:
             self.best_dice = val_dice
             self.epochs_without_improvement = 0
-            checkpoint = {
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "best_dice": self.best_dice,
-                "architecture": self.config.get("architecture", "segresnet"),
-                "epoch": epoch,
-                "history": self.history,
-            }
-            torch.save(checkpoint, self.checkpoint_path)
-            LOGGER.info("Saved best checkpoint to %s", self.checkpoint_path)
         else:
             self.epochs_without_improvement += 1
+
+        checkpoint = {
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "best_dice": self.best_dice,
+            "architecture": self.config.get("architecture", "segresnet"),
+            "epoch": epoch,
+            "history": self.history,
+        }
+        torch.save(checkpoint, self.checkpoint_path)
+        backup_path = self.checkpoint_path.with_suffix(".bak")
+        torch.save(checkpoint, backup_path)
+        if improved:
+            LOGGER.info("Saved improved checkpoint to %s", self.checkpoint_path)
+        else:
+            LOGGER.info("Saved checkpoint to %s", self.checkpoint_path)
 
     def _should_stop(self, val_dice: float) -> bool:
         patience = self.config.get("early_stopping_patience", 3)

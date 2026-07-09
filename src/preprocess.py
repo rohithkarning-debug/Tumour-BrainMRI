@@ -24,6 +24,20 @@ class Preprocessor:
             volume = F.interpolate(volume.float(), size=target_shape, mode="trilinear" if not is_mask else "nearest")
         return volume
 
+    def _normalize_volume(self, volume: torch.Tensor) -> torch.Tensor:
+        volume = volume.float()
+        if volume.numel() == 0:
+            return volume
+
+        lower = torch.quantile(volume, 0.01)
+        upper = torch.quantile(volume, 0.99)
+        clipped = torch.clamp(volume, lower, upper)
+        mean = clipped.mean()
+        std = clipped.std()
+        if std < 1e-6:
+            return torch.zeros_like(clipped)
+        return (clipped - mean) / (std + 1e-6)
+
     def __call__(self, sample: dict) -> dict:
         image = sample["image"]
         mask = sample["mask"]
@@ -39,7 +53,7 @@ class Preprocessor:
         image_tensor = self._resize_volume(image_tensor, self.spatial_size, is_mask=False).squeeze(0)
         mask_tensor = self._resize_volume(mask_tensor, self.spatial_size, is_mask=True).squeeze(0)
 
-        image_tensor = (image_tensor - image_tensor.mean()) / (image_tensor.std() + 1e-6)
+        image_tensor = self._normalize_volume(image_tensor)
         mask_tensor = (mask_tensor > 0).float()
 
         return {
