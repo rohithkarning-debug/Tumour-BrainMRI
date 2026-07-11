@@ -18,11 +18,16 @@ Thumbs.db
 # IDE
 .vscode/
 
-# Data and generated outputs
-input/
-output/
-results/
-models/
+# Data and generated outputs (ignore content, keep folder structure via .gitkeep)
+input/**
+!input/.gitkeep
+output/**
+!output/.gitkeep
+models/**
+!models/.gitkeep
+results/**
+!results/plots/
+!results/plots/.gitkeep
 
 # Logs
 *.log
