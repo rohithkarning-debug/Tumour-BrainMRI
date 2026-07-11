@@ -26,7 +26,7 @@ class SegmentationPredictor:
         architecture: Optional[str] = None,
         spatial_size: tuple[int, int, int] = (64, 64, 64),
         threshold: float = 0.75,
-        min_component_voxels: int = 500,
+        min_component_voxels: int = 10,
     ) -> None:
         self.device = get_device()
         self.checkpoint_path = checkpoint_path

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
-from monai.losses import DiceCELoss
+from monai.losses import DiceLoss
 from torch.utils.data import DataLoader
 
 from .predictor import SegmentationPredictor
@@ -37,7 +37,9 @@ class SegmentationEvaluator:
         self.predictor = SegmentationPredictor(checkpoint_path, architecture=architecture)
         self.model = self.predictor.model.to(self.device)
         self.model.eval()
-        self.loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
+        self.dice_loss_fn = DiceLoss(include_background=False, to_onehot_y=True, softmax=True)
+        ce_weight = torch.tensor([1.0, 50.0], device=self.device)
+        self.ce_loss_fn = torch.nn.CrossEntropyLoss(weight=ce_weight)
         self.results_dir = Path(results_dir)
         ensure_directory(self.results_dir)
         ensure_directory(self.results_dir / "plots")
@@ -73,7 +75,9 @@ class SegmentationEvaluator:
                 inference_time = time.perf_counter() - start_time
                 total_inference_time += inference_time
 
-                loss = self.loss_fn(logits, target)
+                dice_loss = self.dice_loss_fn(logits, target)
+                ce_loss = self.ce_loss_fn(logits, target.squeeze(1))
+                loss = 0.5 * dice_loss + 0.5 * ce_loss
                 total_loss += loss.item()
 
                 predictions = torch.argmax(logits, dim=1)
